@@ -30,9 +30,9 @@ namespace DesktopDraw.App
 
         private List<Pixel> pixels;
         int allowDifferences = 75;
-        int waitX = 0, waitY = 40;
-        int hotKeyEnd = 0x26; // Up Arrow Key
-        int hotKeyStop = 0x27; // Right Arrow Key
+        int waitX = 0, waitY = 1;
+        int hotKeyEnd = 0x26; // arrow up key
+        int hotKeyStop = 0x1B; // Escape key
 
 
         public Form1() {
@@ -90,6 +90,7 @@ namespace DesktopDraw.App
 
                 if (pixel.Y > y) {
                     y = pixel.Y;
+                    x = 0;
                     Thread.Sleep(waitY);
                 }
 
@@ -97,21 +98,6 @@ namespace DesktopDraw.App
                     x = pixel.X;
                     Thread.Sleep(waitX);
                 }
-
-                if (x == resizedImage.Width) {
-                    x = 0;
-                }
-
-                //if (GetAsyncKeyState(hotKeyEnd) < 0) {
-                //    drawPicture = false;
-                //    break;
-                //}
-                //int screenX = (int)(drawBegin.X + pixel.X);
-                //int screenY = (int)(drawBegin.Y + pixel.Y);
-                //mouse_event(MOUSELEFTDOWN, screenX, screenY, 0, UIntPtr.Zero);
-                //mouse_event(MOUSELEFTUP, screenX, screenY, 0, UIntPtr.Zero);
-                //// Optional: Add a small delay to prevent overwhelming the system
-                //Thread.Sleep(1);
             }
         }
 
@@ -216,12 +202,10 @@ namespace DesktopDraw.App
 
                 if (beginButtonPressed) {
                     drawBegin = new Vector2(Cursor.Position.X, Cursor.Position.Y);
-                    drawBeginTxtBox.Text = drawBegin.ToString();
                 }
 
                 if (endButtonPressed) {
                     drawEnd = new Vector2(Cursor.Position.X, Cursor.Position.Y);
-                    drawEndTxtBox.Text = drawEnd.ToString();
                 }
 
                 if (loadPreview) {
@@ -232,14 +216,6 @@ namespace DesktopDraw.App
 
                 Thread.Sleep(100); // Reduce CPU usage
             }
-        }
-
-        private void trackBar1_Scroll(object sender, EventArgs e) {
-            waitX = trackBar1.Value;
-        }
-
-        private void trackBar2_Scroll(object sender, EventArgs e) {
-            waitY = trackBar2.Value;
         }
     }
 }
