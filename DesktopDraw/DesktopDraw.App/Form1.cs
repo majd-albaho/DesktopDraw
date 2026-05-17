@@ -1,3 +1,5 @@
+using DesktopDraw.App.Model;
+using DesktopDraw.App.Services;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -5,18 +7,9 @@ namespace DesktopDraw.App
 {
     public partial class Form1 : Form
     {
-        [DllImport("user32.dll")]
-        public static extern short GetAsyncKeyState(int vKey);
-
-        [DllImport("user32.dll")]
-        public static extern bool SetCursorPos(int X, int Y);
-
-        [DllImport("user32.dll")]
-        public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo);
-
-
-        private const int MOUSELEFTDOWN = 0x02;
-        private const int MOUSELEFTUP = 0x04;
+        private Thread _drawPreviewThread;
+        private Thread _userInputThread;
+        private DrawService _drawService;
 
         private bool beginButtonPressed;
         private bool endButtonPressed;
@@ -29,174 +22,30 @@ namespace DesktopDraw.App
         private Vector2 drawBegin, drawEnd;
 
         private List<Pixel> pixels;
-        int allowDifferences = 75;
-        int waitX = 0, waitY = 1;
+        int waitX = 0, waitY = 2;
         int hotKeyEnd = 0x26; // arrow up key
         int hotKeyStop = 0x1B; // Escape key
 
 
         public Form1() {
             InitializeComponent();
+
+            _drawService = new DrawService();
         }
 
         private void Form1_Load(object sender, EventArgs e) {
             CheckForIllegalCrossThreadCalls = false;
-            var userInputThread = new Thread(ProcessUserInput) { IsBackground = true };
-            userInputThread.Start();
+            _userInputThread = new Thread(ProcessUserInput) { IsBackground = true };
+            _userInputThread.Start();
         }
-
-        private bool AreColorsSimilar(Color c1, Color c2, int maxColorDifference) {
-            int rDiff = Math.Abs(c1.R - c2.R);
-            int gDiff = Math.Abs(c1.G - c2.G);
-            int bDiff = Math.Abs(c1.B - c2.B);
-            return rDiff <= maxColorDifference && gDiff <= maxColorDifference && bDiff <= maxColorDifference;
-        }
-
-        private List<Pixel> ExtractSimilarPixels(Bitmap bitmap, Color targetColor, int maxColorDifference) {
-            List<Pixel> pixels = new List<Pixel>();
-
-            for (int i = 0; i < bitmap.Width; i++) {
-                for (int j = 0; j < bitmap.Height; j++) {
-                    var pixelColor = bitmap.GetPixel(i, j);
-                    if (AreColorsSimilar(pixelColor, targetColor, maxColorDifference)) {
-                        pixels.Add(new Pixel(i, j, pixelColor));
-                    }
-                }
-            }
-            return pixels;
-        }
-
-        private void DrawImageOnScreen() {
-            drawPicture = true;
-
-            var newWidth = (int)(drawEnd.X - drawBegin.X);
-            var newHeight = (int)(drawEnd.Y - drawBegin.Y);
-
-            var resizedImage = new Bitmap(newWidth, newHeight);
-            using (var g = Graphics.FromImage(resizedImage)) {
-                g.DrawImage(clipboardImage, 0, 0, newWidth, newHeight);
-            }
-
-            pixels = ExtractSimilarPixels(resizedImage, Color.Black, allowDifferences);
-            pixels = pixels.OrderBy(p => p.Y).ThenBy(p => p.X).ToList();
-
-            int x = 0; int y = 0;
-            foreach (var pixel in pixels) {
-                if (!drawPicture)
-                    return;
-
-                SetCursorPos((int)drawBegin.X + pixel.X, (int)drawBegin.Y + pixel.Y);
-                mouse_event(MOUSELEFTDOWN | MOUSELEFTUP, 0, 0, 0, UIntPtr.Zero);
-
-                if (pixel.Y > y) {
-                    y = pixel.Y;
-                    x = 0;
-                    Thread.Sleep(waitY);
-                }
-
-                if (pixel.X > x) {
-                    x = pixel.X;
-                    Thread.Sleep(waitX);
-                }
-            }
-        }
-
-        private void LoadImageFromClipboard() {
-            var cImage = Clipboard.GetImage();
-            if (cImage == null) {
-                MessageBox.Show("Failed to load image from clipboard.");
-                return;
-            }
-
-            clipboardImage = cImage;
-            previewPictureBox.Image = clipboardImage;
-            previewPictureBox.Size = clipboardImage.Size;
-            LoadImagePreview();
-        }
-
-        private void LoadImagePreview() {
-            loadPreview = false;
-            loadingPreview = true;
-
-            var recostructImage = new Bitmap(previewPictureBox.Width, previewPictureBox.Height);
-            using (var g = Graphics.FromImage(recostructImage)) {
-                g.DrawImage(clipboardImage, 0, 0, previewPictureBox.Width, previewPictureBox.Height);
-            }
-
-            if (loadPreview) {
-                loadingPreview = false;
-                return;
-            }
-
-            pixels = ExtractSimilarPixels(recostructImage, Color.Black, allowDifferences);
-            using (var g = Graphics.FromImage(recostructImage)) {
-                g.Clear(Color.White);
-            }
-            foreach (var pixel in pixels) {
-                if (loadPreview) {
-                    loadingPreview = false;
-                    return;
-                }
-
-                recostructImage.SetPixel(pixel.X, pixel.Y, Color.Black);
-            }
-
-            drawPictureBox.Invoke(() => {
-                drawPictureBox.Image = recostructImage;
-                drawPictureBox.SizeMode = PictureBoxSizeMode.StretchImage;
-            });
-            loadingPreview = false;
-        }
-
-        private void button1_Click(object sender, EventArgs e) {
-            var cImage = Clipboard.GetImage();
-            if (cImage == null) {
-                MessageBox.Show("Failed to load image from clipboard.");
-                return;
-            }
-
-            clipboardImage = cImage;
-            LoadImageFromClipboard();
-        }
-
-        private void button2_Click(object sender, EventArgs e) {
-            if (clipboardImage == null)
-                return;
-
-            if (drawBegin != Vector2.Zero && drawEnd != Vector2.Zero) {
-                Thread drawThread = new Thread(DrawImageOnScreen) { IsBackground = true };
-                drawThread.Start();
-            }
-        }
-
-        private void button3_MouseDown(object sender, MouseEventArgs e) {
-            beginButtonPressed = true;
-            Cursor = Cursors.Cross;
-        }
-
-        private void button3_MouseUp(object sender, MouseEventArgs e) {
-            beginButtonPressed = false;
-            Cursor = Cursors.Default;
-        }
-
-        private void button4_MouseDown(object sender, MouseEventArgs e) {
-            endButtonPressed = true;
-            Cursor = Cursors.Cross;
-        }
-
-        private void button4_MouseUp(object sender, MouseEventArgs e) {
-            endButtonPressed = false;
-            Cursor = Cursors.Default;
-        }
-
 
         void ProcessUserInput() {
             while (true) {
-                if (GetAsyncKeyState(hotKeyEnd) < 0) {
+                if (WindowsApiImplementation.GetAsyncKeyState(hotKeyEnd) < 0) {
                     Application.Exit();
                 }
 
-                if (GetAsyncKeyState(hotKeyStop) < 0) {
+                if (WindowsApiImplementation.GetAsyncKeyState(hotKeyStop) < 0) {
                     drawPicture = false;
                 }
 
@@ -216,6 +65,122 @@ namespace DesktopDraw.App
 
                 Thread.Sleep(100); // Reduce CPU usage
             }
+        }
+
+
+        private void LoadImageFromClipboard(Image image) {
+            clipboardImage = image;
+            previewPictureBox.Image = clipboardImage;
+            previewPictureBox.Size = clipboardImage.Size;
+            LoadImagePreview();
+        }
+
+        private void LoadImagePreview() {
+            loadPreview = false;
+            loadingPreview = true;
+
+            var recostructImage = new Bitmap(previewPictureBox.Width, previewPictureBox.Height);
+            using (var g = Graphics.FromImage(recostructImage)) {
+                g.DrawImage(clipboardImage, 0, 0, previewPictureBox.Width, previewPictureBox.Height);
+            }
+
+            pixels = _drawService.ExtractSimilarPixels(recostructImage, Color.Black);
+            using (var g = Graphics.FromImage(recostructImage)) {
+                g.Clear(Color.White);
+            }
+
+            bool skipPixel = false;
+            foreach (var pixel in pixels) {
+                if (loadPreview) {
+                    loadingPreview = false;
+                    return;
+                }
+
+                if (!skipPixel) {
+                    recostructImage.SetPixel(pixel.X, pixel.Y, Color.Black);
+                }
+                skipPixel = !skipPixel;
+            }
+
+            drawPictureBox.Invoke(() => {
+                drawPictureBox.Image = recostructImage;
+                drawPictureBox.SizeMode = PictureBoxSizeMode.StretchImage;
+            });
+            loadingPreview = false;
+        }
+
+        private void button1_Click(object sender, EventArgs e) {
+            var cImage = Clipboard.GetImage();
+            if (cImage == null) {
+                MessageBox.Show("Failed to load image from clipboard.");
+                return;
+            }
+
+            LoadImageFromClipboard(cImage);
+        }
+
+        private void button2_Click(object sender, EventArgs e) {
+            if (clipboardImage == null)
+                return;
+
+            if (drawBegin != Vector2.Zero && drawEnd != Vector2.Zero) {
+                if (_drawPreviewThread == null) {
+                    _drawPreviewThread = new Thread(DrawImageOnScreen) { IsBackground = true };
+                }
+
+                _drawPreviewThread.Start();
+            }
+        }
+
+        public void DrawImageOnScreen() {
+            drawPicture = true;
+
+            var imagePixels = _drawService.GetImagePixels(drawBegin, drawEnd, clipboardImage);
+
+            bool skipPixel = false;
+            int x = 0; int y = 0;
+            foreach (var pixel in imagePixels) {
+                if (!drawPicture)
+                    return;
+
+                if (!skipPixel) {
+                    WindowsApiImplementation.SetCursorPos((int)drawBegin.X + pixel.X, (int)drawBegin.Y + pixel.Y);
+                    WindowsApiImplementation.mouse_event(WindowsApiImplementation.MOUSELEFTDOWN | WindowsApiImplementation.MOUSELEFTUP, 0, 0, 0, UIntPtr.Zero);
+                }
+
+                if (pixel.Y > y) {
+                    y = pixel.Y;
+                    x = 0;
+                    Thread.Sleep(waitY);
+                }
+
+                if (pixel.X > x) {
+                    x = pixel.X;
+                    Thread.Sleep(waitX);
+                }
+                skipPixel = !skipPixel;
+            }
+        }
+
+
+        private void button3_MouseDown(object sender, MouseEventArgs e) {
+            beginButtonPressed = true;
+            Cursor = Cursors.Cross;
+        }
+
+        private void button3_MouseUp(object sender, MouseEventArgs e) {
+            beginButtonPressed = false;
+            Cursor = Cursors.Default;
+        }
+
+        private void button4_MouseDown(object sender, MouseEventArgs e) {
+            endButtonPressed = true;
+            Cursor = Cursors.Cross;
+        }
+
+        private void button4_MouseUp(object sender, MouseEventArgs e) {
+            endButtonPressed = false;
+            Cursor = Cursors.Default;
         }
     }
 }

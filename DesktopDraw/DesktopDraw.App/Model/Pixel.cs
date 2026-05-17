@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace DesktopDraw.App
+namespace DesktopDraw.App.Model
 {
     internal class Pixel
     {
